@@ -11,3 +11,5 @@ playwright-report/
 test-results/
 *.pem
 *.key
+backend/generated-assets.mjs
+dist/

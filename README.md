@@ -1,38 +1,89 @@
 # Daybook
 
-A simple homework tracker. Add assignments with a class, due date, and completion status. Edit, search, filter, delete with undo, and check off your work.
+A homework tracker with classes, due dates, completion, search, filters, editing, and delete/undo. Your existing manual list is preserved.
 
-## Canvas setup (in progress)
+## Open Daybook
 
-The first stage adds a server-only, read-only Canvas connector and a safe connection check. Canvas import is not enabled in the website yet. Your existing list and manual controls are unchanged.
+- Original site: https://jphilowk.github.io/homework-tracker/
+- Private Canvas version: https://daybook-canvas.homework-tracker.workers.dev/ — **setup in progress; access is currently locked**.
 
-The Canvas token belongs in the repository's GitHub Actions secret named `CANVAS_TOKEN`. Never put it in this repository, a URL, browser storage, chat, or a command-line argument. To set or rotate it, use `gh secret set CANVAS_TOKEN --repo jphilowk/homework-tracker` and enter it at the hidden prompt. Tokens expire; replace it before its Canvas expiration date.
+Canvas API access has been verified with the real account through the **Check Canvas connection** GitHub workflow. The private backend and UI are implemented. Cloudflare sign-in protection, the backend's Canvas secret, authenticated production sync, and enabling its schedule are still pending. Do not treat the upgrade as complete until those checks pass.
 
-The **Check Canvas connection** workflow is manually run from GitHub Actions on `main`. It reads active student courses and assignment/submission metadata, then reports only fixed success/failure messages. It does not save student data, upload artifacts, or log API response bodies. Its unit tests use fabricated data and run without credentials.
+## Bring your existing homework to the private site
 
-The planned connected app will use a private server-side secret store, authenticated access, and a private Canvas snapshot that can refresh while the browser is closed. GitHub Pages alone cannot securely hold a token or private school data. See [the implementation and migration plan](docs/canvas-plan.md). Provisioning and live integration remain to be completed.
+Once the connected site is ready:
 
-## Open the app
+1. On the original site, select **Export backup** in the Canvas area.
+2. Open the private site and sign in with your authorized Cloudflare identity.
+3. Select **Import backup** and choose the downloaded JSON file.
+4. Select **Sync Canvas** to import your school assignments.
 
-Published site: https://jphilowk.github.io/homework-tracker/
+Import merges new records without replacing existing records with the same ID. Re-importing the same backup does not duplicate assignments. Backup files contain school information; keep them private. Backups are read locally in the browser, not uploaded to GitHub or the backend.
 
-Visit http://localhost:4173 while the server is running.
+The original `daybook.assignments.v1` localStorage key is left untouched as a recovery copy. New changes use `daybook.state.v2`, which saves the list, dismissed Canvas IDs, and sync timestamp together. Import also keeps a pre-import recovery copy under `daybook.before-import.v2`. Neither migration nor a failed sync clears your list. Storage errors stop the save and show a message.
 
-To restart it, open Terminal and run:
+## How Canvas sync works
+
+**Sync Canvas** requests active student courses and their assignments through the private server. Canvas credentials never reach the browser. Dates use the student-effective Canvas due timestamp and are shown in Central time, including daylight saving. Hover over an imported due date to see its full timestamp. New assignments without a usable due date are skipped.
+
+Imports are matched by school, course ID, and assignment ID. Changed Canvas titles, classes, and dates update the existing import. Local edits to those Canvas-owned fields last until a newer snapshot arrives. Manual assignments are never replaced by Canvas imports.
+
+Confirmed submission evidence can mark a task complete. A grade alone cannot: it might be a zero for missing work. Unknown Canvas status preserves the prior completion state. Checking or unchecking an imported assignment records your own completion choice, which future syncs preserve. Excused and resubmission statuses are shown as notes; resubmission reopens an automatically completed task unless you explicitly chose its status.
+
+Deleting an import remembers its Canvas ID, so it stays deleted on later syncs. **Undo** restores it. Missing assignments and assignments that lose their due dates are kept with a note and their last known date. Nothing is deleted just because Canvas stopped returning it.
+
+Cloudflare stores a private Canvas snapshot. Your manual tasks, local completion choices, and dismissals remain in this browser. They are not automatically shared across devices. Clearing browser data removes those local choices; export backups when needed.
+
+The browser loads the most recent snapshot on opening/focus and checks for newer snapshots every five minutes while visible. A server-side schedule is implemented but disabled until live manual sync is verified; the intended interval is every two hours. That schedule will continue while the browser is closed. A failed check preserves the last successful snapshot and timestamp. A two-minute cooldown and a database lease prevent excessive or overlapping Canvas requests.
+
+## Credential handling
+
+- `CANVAS_TOKEN` is already stored in GitHub Actions Secrets for the read-only connection check. That check logs only fixed results, never student records, credentials, or raw API errors. It saves no artifacts.
+- The private Worker needs its own `CANVAS_TOKEN` secret. GitHub Secrets are intentionally not readable back, and are not automatically copied to Cloudflare. Enter it only at a secure secret-manager/CLI prompt when instructed.
+- The Worker also has an `OWNER_EMAIL` secret restricting access to the authorized owner. Cloudflare Access must authenticate every request. Spoofed identity headers do not grant access; the service uses Cloudflare's trusted `ctx.access` identity.
+- No `.env`, `.dev.vars`, credential files, database snapshots, or real student fixtures belong in the repository. Never put a token in chat, a shell command argument, or frontend settings. Replace the token securely before its Canvas expiration date; revoked/expired tokens produce a safe error without clearing homework.
+- Once the Worker exists, a token can be set or rotated locally using `npx --no-install wrangler secret put CANVAS_TOKEN` from this folder and entering it at the hidden prompt. The GitHub check's token is rotated separately with `gh secret set CANVAS_TOKEN --repo jphilowk/homework-tracker`.
+
+## Local use and tests
+
+Node.js 24 is recommended. Start the manual tracker with:
 
 ```sh
 cd ~/homework-tracker
 npm start
 ```
 
-No packages need to be installed. Node.js is already installed on this computer. Stop the server with Control-C.
+Visit http://localhost:4173. Stop with Control-C. The local server serves only public UI files; it does not access real Canvas credentials or private cloud data.
 
-Assignments save in this browser on this computer. They are not synced between browsers or devices. Clearing browser site data removes them. Keep using the same localhost address and port to access your list.
+```sh
+npm test
+npm run audit:secrets
+```
 
-The published site saves its own list. Assignments entered on localhost do not automatically transfer to the published site. Assignment data stays in browser storage and is not committed to GitHub.
+Tests cover the read-only API connector, pagination and destination restrictions, conservative completion, date conversion, state migration, deduplication, editing metadata, missing records, failure preservation, SQL lease/cooldown, authenticated request handling, and background scheduling. Test data and credentials are fabricated. The credential-pattern audit checks working files and Git history and supplements manual diff review.
 
-## Tests
+Optional browser tests use Playwright with installed Google Chrome:
 
-Run `npm test` for assignment validation, date handling, filtering, and sorting tests.
+```sh
+npm install --no-save playwright
+APP_URL=http://localhost:4174 node tests/browser.mjs
+node tests/canvas-browser.mjs
+```
 
-For the optional browser tests, install Playwright (`npm install --no-save playwright`) and run `node tests/browser.mjs` with Google Chrome installed. Set `APP_URL` to test the published site instead of localhost. Browser tests use an isolated browser session.
+Run the local server on port 4174 (`PORT=4174 npm start`) for the Canvas suite. It mocks Canvas responses and tests desktop/mobile layouts, manual workflows, sync updates, completion overrides, delete/undo, failures, backups, migration/reload, and changes made during a sync. Do not run screenshots or traces against an authenticated real-account session.
+
+## Deployment maintenance
+
+GitHub Pages publishes the manual app from `main`. The private Worker is deployed separately:
+
+```sh
+npm ci
+npx --no-install wrangler d1 migrations apply daybook-canvas --remote
+npm run deploy:worker
+```
+
+The Worker embeds only five allowlisted UI files. It deliberately has no Cloudflare Static Assets binding because that router does not pass `ctx.access` to the user Worker. Owner identity is checked before returning any UI or API response. All responses are private/non-cacheable; state-changing API calls require a matching Origin and an application header. No public Canvas proxy or credential-entry endpoint exists.
+
+`AUTO_SYNC_ENABLED` and `triggers.crons` remain disabled in `wrangler.jsonc` pending successful authenticated production verification. The intended cron is `17 */2 * * *` (UTC). Do not enable it before the manual connection works.
+
+See [the implementation plan](docs/canvas-plan.md) for architecture, decisions, and verification gates.

@@ -3,5 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.mjs", "test": "node --test tests/*.test.mjs" }
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node scripts/build-worker.mjs && node --test tests/*.test.mjs",
+    "build:worker": "node scripts/build-worker.mjs",
+    "deploy:worker": "wrangler deploy",
+    "audit:secrets": "node scripts/audit-secrets.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.137.0"
+  }
 }

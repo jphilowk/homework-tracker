@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({channel:'chrome',headless:true});
+const manual = {id:'manual-1',title:'Existing reading',className:'English',due:'2026-09-27',done:true};
+const base = {id:'canvas:naperville:41:72',source:'canvas',origin:'https://naperville.instructure.com',courseId:'41',assignmentId:'72',title:'Canvas worksheet',className:'Science',dueAt:'2026-09-25T04:59:00.000Z',url:'https://naperville.instructure.com/courses/41/assignments/72',submission:'unknown'};
+let snapshot={version:1,origin:base.origin,fetchedAt:'2026-09-23T12:00:00Z',items:[base,{...base,id:'canvas:naperville:41:73',assignmentId:'73',title:'Submitted lab',url:'https://naperville.instructure.com/courses/41/assignments/73',submission:'submitted'}]};
+let sequence=0,fail=false,hold=null;
+function next(items=snapshot.items) {snapshot={...snapshot,items,fetchedAt:new Date(Date.parse('2026-09-23T13:00:00Z')+(++sequence)*60000).toISOString()};}
+try {
+  const context=await browser.newContext({viewport:{width:1440,height:1100}}),page=await context.newPage();
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const html=(await readFile(new URL('../index.html',import.meta.url),'utf8')).replace('content="local"','content="connected"');
+  await page.route('http://localhost:4174/',route=>route.fulfill({contentType:'text/html',body:html}));
+  await page.route('**/api/canvas/*',async route=>{
+    if(route.request().method()==='POST' && hold) await hold;
+    if(fail && route.request().method()==='POST') return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'authentication'})});
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({snapshot,lastSuccess:snapshot.fetchedAt,error:null,configured:true})});
+  });
+  await page.addInitScript(value=>{if(!localStorage.getItem('fixture-seeded')){localStorage.setItem('daybook.assignments.v1',JSON.stringify([value]));localStorage.setItem('fixture-seeded','yes');}},manual);
+  await page.goto('http://localhost:4174/');
+  await page.waitForFunction(()=>document.querySelectorAll('.assignment-row').length===3);
+  assert.equal(await page.locator('.canvas-badge').count(),2);
+  assert.equal(await page.locator('#done-count').textContent(),'2');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daybook.assignments.v1')).length),1);
+  async function sync() {await page.locator('#sync-canvas').click();await page.waitForFunction(()=>!document.querySelector('#sync-canvas').disabled);}
+  next(snapshot.items.map(a=>a.id===base.id?{...a,title:'Updated worksheet',dueAt:'2026-09-28T04:59:00Z'}:a));await sync();
+  assert.equal(await page.locator('.assignment-row').count(),3);assert.equal(await page.getByRole('heading',{name:'Updated worksheet',exact:true}).count(),1);
+  await page.getByRole('checkbox',{name:'Mark Submitted lab as to do',exact:true}).click();next();await sync();
+  assert.equal(await page.getByRole('checkbox',{name:'Mark Submitted lab as completed',exact:true}).isChecked(),false);
+  await page.getByRole('button',{name:'Edit Updated worksheet',exact:true}).click();
+  assert.equal(await page.locator('#edit-note').isVisible(),true);
+  await page.locator('#title').fill('My local worksheet title');await page.locator('#completion').selectOption('done');await page.locator('#save-button').click();
+  next();await sync();assert.equal(await page.getByRole('heading',{name:'Updated worksheet',exact:true}).count(),1);
+  assert.equal(await page.getByRole('checkbox',{name:'Mark Updated worksheet as to do',exact:true}).isChecked(),true);
+  await page.getByRole('button',{name:'Delete Updated worksheet',exact:true}).click();next();await sync();assert.equal(await page.locator('.assignment-row').count(),2);
+  await page.locator('#undo-button').click();assert.equal(await page.locator('.assignment-row').count(),3);
+  fail=true;const before=await page.evaluate(()=>localStorage.getItem('daybook.state.v2'));await sync();
+  assert.equal(await page.evaluate(()=>localStorage.getItem('daybook.state.v2')),before);
+  assert.match(await page.locator('#canvas-message').textContent(),/expired or was revoked/);fail=false;
+  let release;hold=new Promise(resolve=>{release=resolve;});next();await page.locator('#sync-canvas').click();
+  await page.locator('#title').fill('Added during sync');await page.locator('#class-name').fill('History');await page.locator('#due').fill('2026-09-30');await page.locator('#save-button').click();
+  release();hold=null;await page.waitForFunction(()=>!document.querySelector('#sync-canvas').disabled);
+  assert.equal(await page.getByRole('heading',{name:'Added during sync',exact:true}).count(),1);
+  next(snapshot.items.map(a=>a.id===base.id?{...a,availability:'missing'}:a));await sync();
+  assert.match(await page.locator('.canvas-warning').first().textContent(),/kept here/);
+  const backup=[manual,{id:'backup-2',title:'Backup task',className:'Art',due:'2026-09-30',done:false}];
+  await page.locator('#backup-file').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+  await page.waitForFunction(()=>document.querySelectorAll('.assignment-row').length===5);
+  const downloadPromise=page.waitForEvent('download');await page.locator('#export-data').click();const download=await downloadPromise;assert.match(download.suggestedFilename(),/^daybook-backup-/);
+  await page.reload();await page.waitForFunction(()=>document.querySelectorAll('.assignment-row').length===5);
+  assert.equal(await page.getByRole('heading',{name:'Existing reading',exact:true}).count(),1);
+  await page.locator('#notice').evaluate(node=>node.hidden=true);
+  await page.screenshot({path:'tests/canvas-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'tests/canvas-mobile.png',fullPage:true});
+  const prior=await page.evaluate(()=>localStorage.getItem('daybook.state.v2'));
+  await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw new DOMException('Quota exceeded','QuotaExceededError');};});
+  next();await sync();assert.equal(await page.evaluate(()=>localStorage.getItem('daybook.state.v2')),prior);
+  assert.match(await page.locator('#canvas-message').textContent(),/could not save/);
+  assert.deepEqual(errors,[]);
+  console.log('Canvas browser tests passed: v1 migration, sync, deduplication, updates, completion overrides, edit, delete/undo, failure preservation, edits during sync, missing records, backups, reload, mobile layout, and storage failure. All data was fabricated.');
+}finally{await browser.close();}

@@ -1,6 +1,6 @@
 # Canvas integration plan
 
-Status: server-only read-only connector and manually triggered connection check implemented and tested with fabricated fixtures. The user confirmed personal-token availability and stored `CANVAS_TOKEN` in GitHub Actions Secrets. Live connection verification is the next gate; connected UI, backend provisioning, and automatic sync are not yet deployed. Do not paste credentials into chat.
+Status: real-account API verification succeeded in GitHub run 35878075642. The private D1 database, protected Worker implementation, import UI, additive backup migration, and disabled background-sync handler are implemented. Local verification: 37 unit/integration tests and both desktop/mobile browser suites pass with fabricated data. Initial Worker deployment is locked pending Cloudflare Access configuration and the backend Canvas secret. Authenticated production sync and enabling the schedule remain required. Do not paste credentials into chat.
 
 ## Existing app
 
@@ -14,7 +14,7 @@ The database initially needs only normalized Canvas records and sync metadata, n
 
 Use a manual Sync Canvas endpoint first. Once verified against the real account, enable a modest schedule (initially every two hours), a sync lease, and a minimum interval for manual refreshes. Never publish assignment snapshots in GitHub Pages, commits, logs, or public workflow artifacts. GitHub Secrets alone would protect a token but would not protect assignment data published by an Actions job.
 
-Cloudflare account authorization and the chosen sign-in identity will require user input later. No resources have been provisioned yet. Revisit this plan if the account already has a simpler suitable backend.
+The user authorized Wrangler. The `daybook-canvas` database and Worker have been provisioned. Target URL: https://daybook-canvas.homework-tracker.workers.dev/. The verified Cloudflare account email is used for the Worker owner restriction without publishing that email in source. Cloudflare Access still needs dashboard configuration because Wrangler OAuth does not include Access application management. The Worker uses native `ctx.access` and embeds an explicit allowlist of UI files instead of the Static Assets router, which does not propagate `ctx.access`.
 
 ## Canvas access and data rules
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "daybook-canvas",
+  "main": "backend/worker.mjs",
+  "compatibility_date": "2026-09-23",
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "build": { "command": "node scripts/build-worker.mjs" },
+  "observability": { "enabled": false },
+  "d1_databases": [{ "binding": "DB", "database_name": "daybook-canvas", "database_id": "b6f2b074-fdc5-4a9b-b25f-ae948d65add1", "migrations_dir": "migrations" }],
+  "vars": { "AUTO_SYNC_ENABLED": "false" },
+  "triggers": { "crons": [] }
+}
