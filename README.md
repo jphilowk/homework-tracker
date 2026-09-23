@@ -2,6 +2,16 @@
 
 A simple homework tracker. Add assignments with a class, due date, and completion status. Edit, search, filter, delete with undo, and check off your work.
 
+## Canvas setup (in progress)
+
+The first stage adds a server-only, read-only Canvas connector and a safe connection check. Canvas import is not enabled in the website yet. Your existing list and manual controls are unchanged.
+
+The Canvas token belongs in the repository's GitHub Actions secret named `CANVAS_TOKEN`. Never put it in this repository, a URL, browser storage, chat, or a command-line argument. To set or rotate it, use `gh secret set CANVAS_TOKEN --repo jphilowk/homework-tracker` and enter it at the hidden prompt. Tokens expire; replace it before its Canvas expiration date.
+
+The **Check Canvas connection** workflow is manually run from GitHub Actions on `main`. It reads active student courses and assignment/submission metadata, then reports only fixed success/failure messages. It does not save student data, upload artifacts, or log API response bodies. Its unit tests use fabricated data and run without credentials.
+
+The planned connected app will use a private server-side secret store, authenticated access, and a private Canvas snapshot that can refresh while the browser is closed. GitHub Pages alone cannot securely hold a token or private school data. See [the implementation and migration plan](docs/canvas-plan.md). Provisioning and live integration remain to be completed.
+
 ## Open the app
 
 Published site: https://jphilowk.github.io/homework-tracker/

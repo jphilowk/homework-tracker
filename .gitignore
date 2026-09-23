@@ -3,3 +3,11 @@ node_modules/
 tests/*.png
 .env
 .env.*
+.dev.vars
+.dev.vars.*
+.wrangler/
+coverage/
+playwright-report/
+test-results/
+*.pem
+*.key
